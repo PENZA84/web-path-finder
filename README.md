@@ -51,6 +51,7 @@ python dir_fuzz.py http://example.com -w common.txt -th 50 -t 5
 python dir_fuzz.py http://example.com -w common.txt -o results.txt
 ```
 
+---
 
 ## ⚠️ Disclaimer
 

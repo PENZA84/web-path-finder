@@ -7,11 +7,19 @@ Python web path fuzzing tool designed to discover hidden directories, files, and
 - **Multi-threaded scanning** using `ThreadPoolExecutor` for fast execution
 - **Size formatting** (B, KB, MB, GB)
 - **Sensitive file detection** (`.env`, `.git`, `config`, `backup`, etc.)
-- **Custom User-Agent** to avoid basic bot-detection
+- **Custom User-Agent** to reduce basic bot detection
 - **Export results** to a text file (`-o`)
 - **Automatic protocol validation** (adds `http://` if missing)
 - **Clean output formatting** with aligned columns
 - **Configurable timeout and thread count**
+
+---
+
+## How it works:
+- Generates URLs from wordlist
+- Sends concurrent HTTP requests
+- Analyzes HTTP status codes and responses
+- Filters and displays relevant results
 
 ---
 
@@ -50,6 +58,12 @@ python dir_fuzz.py http://example.com -w common.txt -th 50 -t 5
 ```bash
 python dir_fuzz.py http://example.com -w common.txt -o results.txt
 ```
+
+---
+
+## Known Limitations
+- **Rate Limiting:** High thread counts may trigger 429 errors or temporary IP bans on strict servers.
+- **Bot Detection:** Some advanced WAFs may still block requests despite the custom User-Agent.
 
 ---
 

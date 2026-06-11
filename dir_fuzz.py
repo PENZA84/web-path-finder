@@ -1,4 +1,5 @@
 import argparse
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,7 +9,7 @@ parser=argparse.ArgumentParser()
 
 parser.add_argument("url", help="Follow by url to recon")
 parser.add_argument("-w", "--wordlist", help="Followed by wordlist file path.", required=True)
-parser.add_argument("-th", "--threads", help="Followed by number of threads desired. By default it'll be 40.", type=int, default=40)
+parser.add_argument("-th", "--threads", help="Concurrent threads (1-1000). Default: 40", type=int, default=40)
 parser.add_argument("-t", "--timeout", help="Followed by timeout desired in seconds. By default it'll be 10 seconds", type=int, default=10)
 parser.add_argument("-o", "--output", help="File to save the results", default=None)
 
@@ -26,15 +27,18 @@ def path_fuzzer(url, timeout, path):
         size_str=None
         size_bytes=response.headers.get("Content-Length")
         if size_bytes is not None:
-            size_bytes=int(size_bytes)
-            if size_bytes>1024*1024*1024:
-                size_str=f"(size: {size_bytes/(1024*1024*1024):.2f}GB)"
-            elif size_bytes>1024*1024:
-                size_str=f"(size: {size_bytes/(1024*1024):.2f}MB)"
-            elif size_bytes>1024:
-                size_str=f"(size: {size_bytes/(1024):.2f}KB)"
-            else:
-                size_str=f"(size: {size_bytes:.2f}B)"
+            try:
+                size_bytes = int(size_bytes)
+                if size_bytes>1024*1024*1024:
+                    size_str=f"(size: {size_bytes/(1024*1024*1024):.2f}GB)"
+                elif size_bytes>1024*1024:
+                    size_str=f"(size: {size_bytes/(1024*1024):.2f}MB)"
+                elif size_bytes>1024:
+                    size_str=f"(size: {size_bytes/(1024):.2f}KB)"
+                else:
+                    size_str=f"(size: {size_bytes:.2f}B)"
+            except (TypeError, ValueError):
+                size_str = None
 
         
         sensitive_keywords = [".git", ".env", "config", "configuration", "settings", "backup", "backups", "dump", "database", "db", "wp-config", "wordpress", "joomla", "admin", "api", "dashboard", "panel", "logs", "log"]
@@ -62,48 +66,84 @@ def path_fuzzer(url, timeout, path):
 
 
 if args.url and args.wordlist:
+    interrupted=False
+    start_time=time.time()
     #Validate url's protocol
     if not args.url.startswith(('http://', 'https://')):
-        args.url = 'http://' + args.url
-        print(f"[!] No protocol specified. Assuming {args.url}")
+        base_url=args.url
+
+        detected=None
+
+        for proto in ["https://", "http://"]:
+            test_url=proto+base_url
+
+            try:
+                req=urllib.request.Request(test_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"}, method="GET")
+                urllib.request.urlopen(req, timeout=args.timeout)
+
+                detected = test_url
+                break
+            except Exception:
+                continue
+
+        if detected:
+            args.url=detected
+            print(f"[!] Auto-detected working protocol: {args.url}\n")
+        else:
+            print("[!] Could not detect protocol. Defaulting to HTTP\n")
+            args.url = "http://" + base_url
+
+    url=args.url
 
 
-    with open(f"{args.wordlist}", "r") as f:                                                        #Read wordlist
+    with open(f"{args.wordlist}", "r", encoding="utf-8", errors="ignore") as f:                                                        #Read wordlist
         paths = [line.strip() for line in f if line.strip()]                                        #Filter empty lines
 
 
     out_file = open(args.output, "w") if args.output else None                                      #Open output file in writing mode
 
 
-    print(f"[+] Testing paths against {args.url}...")
+    workers=max(1, min(1000, args.threads))
+    executor=ThreadPoolExecutor(max_workers=workers)
+    try:
+        print(f"[+] Testing paths against {args.url}...")
 
-    if out_file:
-        out_file.write(f"[+] Testing paths against {args.url}...\n")
-        out_file.flush()                                                                #Forces writing line inmediately
+        if out_file:
+            out_file.write(f"[+] Testing paths against {args.url}...\n")
 
-    #Threading with ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+        #Threading with ThreadPoolExecutor
+
         futures=[executor.submit(path_fuzzer, args.url, args.timeout, path) for path in paths]
 
         for future in as_completed(futures):
             temp=future.result()
 
-            if temp[1] and temp[1] not in [404, 429]:                                              #404: Doesn't Exist, 429: Rate Limit
+            if temp[1] is not None and temp[1] not in [404, 429]:                                              #404: Doesn't Exist, 429: Rate Limit
                 #Formatting summary
                 line = f"{'':>{20}}/{temp[0]:<40} {temp[1]:>5} {temp[2]:<20}"
                 if temp[3]:
                     line+=f"{temp[3]:<20}"
                 if temp[4]:
                     line+=f"{temp[4]}"
-            
+                
                 print(line)
 
                 if out_file:
                     out_file.write(line + "\n")
-                    out_file.flush()                                                                #Forces writing line inmediately
+
+    except KeyboardInterrupt:
+        elapsed_time=time.time()-start_time
+        print(f"\n[INFO] Scan interrupted by user. Scan executed during {elapsed_time:.2f} seconds.\nShutting down...")
+        interrupted=True
     
-    if out_file:
-        out_file.close()
-        print(f"\n[+] Results saved to {args.output}")
+    finally:
+        executor.shutdown(wait=False)
+        if out_file:
+            out_file.close()
+            print(f"\n[+] Results saved to {args.output}")
+
+        if not interrupted:
+            elapsed_time=time.time()-start_time
+            print(f"\n[INFO] Scan completed in {elapsed_time:.2f} seconds\n")
 
 

@@ -46,23 +46,16 @@ cd web-path-finder
 
 ---
 
-## Examples
-
-### Basic Scan
+## Usage
 
 ```bash
+# Basic Scan
 python dir_fuzz.py http://example.com -w common.txt
-```
 
-### Scan with custom threads and timeout
-
-```bash
+# Scan with custom threads and timeout
 python dir_fuzz.py http://example.com -w common.txt -th 50 -t 5
-```
 
-### Save results to a file
-
-```bash
+# Save results to a file
 python dir_fuzz.py http://example.com -w common.txt -o results.txt
 ```
 
